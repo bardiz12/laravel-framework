@@ -1022,7 +1022,7 @@ class Builder implements BuilderContract
         }
 
         return $this->toBase()->upsert(
-            $this->addTimestampsToUpsertValues($values),
+            $this->modifyUpsertValues($values),
             $uniqueBy,
             $this->addUpdatedAtToUpsertColumns($update)
         );
@@ -1090,12 +1090,12 @@ class Builder implements BuilderContract
     }
 
     /**
-     * Add timestamps to the inserted values.
+     * Add timestamps to the inserted values and json_encode if column is casted as json.
      *
      * @param  array  $values
      * @return array
      */
-    protected function addTimestampsToUpsertValues(array $values)
+    protected function modifyUpsertValues(array $values)
     {
         if (! $this->model->usesTimestamps()) {
             return $values;
@@ -1103,15 +1103,28 @@ class Builder implements BuilderContract
 
         $timestamp = $this->model->freshTimestampString();
 
-        $columns = array_filter([
+        $timestampColumns = array_filter([
             $this->model->getCreatedAtColumn(),
             $this->model->getUpdatedAtColumn(),
         ]);
 
-        foreach ($columns as $column) {
-            foreach ($values as &$row) {
-                $row = array_merge([$column => $timestamp], $row);
+        $castAsJsonColumns = array_filter($this->model->getCasts(), function ($type) {
+            return in_array($type, ['json', 'array', 'object']);
+        });
+
+        foreach ($values as &$row) {
+            $modifiedColumns = [];
+            foreach ($timestampColumns as $column) {
+                $modifiedColumns[$column] = $timestamp;
             }
+
+            foreach ($castAsJsonColumns as $column) {
+                if (!is_string($row[$column])) {
+                    $modifiedColumns[$column] = json_encode($row[$column]);
+                }
+            }
+
+            $row = array_merge($row, $modifiedColumns);
         }
 
         return $values;
